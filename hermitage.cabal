@@ -1,0 +1,21 @@
+Name:                hermitage
+Version:             0.1
+Synopsis:            Safely check programs for correctnes for use in programming contests.
+-- Description:         
+License:             BSD3
+License-file:        LICENSE
+Author:              Krzysztof Skrzętnicki
+Maintainer:          gtener@gmail.com
+Category:            Development
+Build-type:          Simple
+Cabal-version:       >=1.2
+
+Executable hermitage
+  Main-is:             hermitage.hs
+  Build-depends:       base, ekg, snap-core, snap-server, bytestring, aeson, persistent, persistent-sqlite, persistent-postgresql, global-variables, text, ghc-prim, transformers, pool-conduit, persistent-template, safe
+  Hs-source-dirs:      src
+  Other-modules:       Datatypes, Globals, Handlers
+
+  -- fix broken persistent-sqlite package: it really needs pthread...
+  Extra-libraries:     pthread
+  
