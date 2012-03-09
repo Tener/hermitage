@@ -4,6 +4,7 @@
 import Yesod
 import Yesod.Json
 import Database.Persist.Sqlite
+import Database.Persist.Postgresql
 import Control.Applicative
 import Data.Text
 import GHC.Generics
@@ -12,9 +13,6 @@ import Control.Concurrent
 import Control.Monad
 import Data.Conduit
 -- Define our entities as usual
-
--- data ProblemStatus = PS_Fresh | PS_Running | PS_Finished deriving (Show, Read, Eq)
-
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persist|
 Problem
     description Text
@@ -129,11 +127,13 @@ watchdog pool = forever $ do
                                    update (entityKey ent) [SubmissionStatus =. "processing"]
                        return subm
                      ) pool
-  print keys
-  
+  when (keys /= Nothing) (print keys)
+
+runPGSQL what = withPostgresqlPool "host=localhost port=5432 dbname=hermitage user=hermitage password=hermitage123" openConnectionCount what
+runSQLITE what = withSqlitePool "test.db3" openConnectionCount what
 
 main :: IO ()
-main = withSqlitePool "test.db3" openConnectionCount $ \pool -> do
+main = runPGSQL $ \pool -> do
     runSqlPool (runMigration migrateAll) pool
     forkIO (watchdog pool)
     k <- runSqlPool (insert $ Problem "Michał" "") pool
