@@ -1,6 +1,11 @@
 {-# LANGUAGE StandaloneDeriving, QuasiQuotes, TypeFamilies, GeneralizedNewtypeDeriving, FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell, OverloadedStrings, GADTs, MultiParamTypeClasses #-}
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, DeriveGeneric, ScopedTypeVariables #-}
+
+module Hermitage.YesodNode where
+
+import Remote
+
 import Yesod
 import Yesod.Json
 import Database.Persist.Sqlite
@@ -132,11 +137,13 @@ watchdog pool = forever $ do
 runPGSQL what = withPostgresqlPool "host=localhost port=5432 dbname=hermitage user=hermitage password=hermitage123" openConnectionCount what
 runSQLITE what = withSqlitePool "test.db3" openConnectionCount what
 
-main :: IO ()
-main = runPGSQL $ \pool -> do
+runYesod :: IO ()
+runYesod = runPGSQL $ \pool -> do
     runSqlPool (runMigration migrateAll) pool
     forkIO (watchdog pool)
     k <- runSqlPool (insert $ Problem "Michał" "") pool
     print k
     print =<< runSqlPool (insert $ Submission "haskell" "main = return ()" "fresh" k) pool
     warpDebug 3000 $ Hermitage pool
+
+$( remotable ['runYesod] )

@@ -12,9 +12,10 @@ Cabal-version:       >=1.2
 
 Executable hermitage
   Main-is:             hermitage.hs
-  Build-depends:       base, ekg, snap-core, snap-server, bytestring, aeson, persistent, persistent-sqlite, persistent-postgresql, global-variables, text, ghc-prim, transformers, pool-conduit, persistent-template, safe
+--  Build-depends:       base, ekg, snap-core, snap-server, bytestring, aeson, persistent, persistent-sqlite, persistent-postgresql, global-variables, text, ghc-prim, transformers, pool-conduit, persistent-template, safe
+  Build-depends:       base, yesod, yesod-persistent, bytestring, aeson, persistent-sqlite, persistent, persistent-postgresql, text, ghc-prim, persistent-template
   Hs-source-dirs:      src
-  Other-modules:       Datatypes, Globals, Handlers
+  Other-modules:       Hermitage.YesodNode, Hermitage.Roles
 
   -- fix broken persistent-sqlite package: it really needs pthread...
   Extra-libraries:     pthread

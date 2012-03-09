@@ -1,28 +1,47 @@
-{-# LANGUAGE OverloadedStrings #-}
-
+{-# LANGUAGE TemplateHaskell #-}
 module Main where
 
-import System.Remote.Monitoring -- ekg
+import Hermitage.Yesod
+import Hermitage.Roles
 
+import Remote
 import Control.Concurrent
-import Data.ByteString.Char8 ()
-import Snap.Core
-import Snap.Http.Server
-import Snap.Http.Server.Config
+import Control.Monad
+import Control.Monad.IO.Class
 
-import Datatypes
-import Globals
-import Handlers (myServe)
+greet :: String -> ProcessM ()
+greet name = say ("Hello, "++name)
+badFib :: Integer -> Integer
+badFib 0 = 1
+badFib 1 = 1
+badFib n = badFib (n-1) + badFib (n-2)
+$( remotable ['greet, 'badFib] )
 
-main = do
-  initConnectionPool
-  migrateAllDatatypes
+main :: IO ()
+main = remoteInit Nothing [Main.__remoteCallMetaData, Hermitage.Yesod.__remoteCallMetaData] initialProcess
 
-  insertTestData
+initialProcess :: String -> ProcessM ()
+initialProcess role = do
+  when (role == Hermitage.Roles.role_yesod) (spawnLocal runYesod__closure >> return ())
+--  when (role == Hermitage.Roles.role_master) 
+--  when (role == Hermitage.Roles.role_node)
 
-  forkServer "localhost" 7000
-  forkIO (quickHttpServe myServe)
-
-  mapM_ (\ i -> print i >> threadDelay (10^8)) [1..]
-
+  say role
+  selfNode <- getSelfNode
+  pid <- spawn selfNode (greet__closure "John Baptist")
+  say (show pid)
+  return ()
   
+  let ping = do
+        say "ping!"
+        pi <- getPeers
+        say (show pi)
+
+  forever ((liftIO $ threadDelay (10^6)) >> ping)
+
+
+
+
+
+
+
