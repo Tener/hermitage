@@ -24,7 +24,7 @@ initialProcess :: String -> ProcessM ()
 initialProcess role = do
   selfNode <- getSelfNode
 
-  when (role == Hermitage.Roles.role_yesod) (spawnLocal (callRemoteIO selfNode runYesod__closure) >> return ())
+  when (role == Hermitage.Roles.role_yesod) (spawnLocal runYesodProc >> return ())
 --  when (role == Hermitage.Roles.role_master) 
 --  when (role == Hermitage.Roles.role_node)
 
