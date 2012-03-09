@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Main where
 
-import Hermitage.Yesod
+import Hermitage.YesodNode
 import Hermitage.Roles
 
 import Remote
@@ -18,16 +18,18 @@ badFib n = badFib (n-1) + badFib (n-2)
 $( remotable ['greet, 'badFib] )
 
 main :: IO ()
-main = remoteInit Nothing [Main.__remoteCallMetaData, Hermitage.Yesod.__remoteCallMetaData] initialProcess
+main = remoteInit Nothing [Main.__remoteCallMetaData, Hermitage.YesodNode.__remoteCallMetaData] initialProcess
 
 initialProcess :: String -> ProcessM ()
 initialProcess role = do
-  when (role == Hermitage.Roles.role_yesod) (spawnLocal runYesod__closure >> return ())
+  selfNode <- getSelfNode
+
+  when (role == Hermitage.Roles.role_yesod) (spawnLocal (callRemoteIO selfNode runYesod__closure) >> return ())
 --  when (role == Hermitage.Roles.role_master) 
 --  when (role == Hermitage.Roles.role_node)
 
   say role
-  selfNode <- getSelfNode
+
   pid <- spawn selfNode (greet__closure "John Baptist")
   say (show pid)
   return ()
@@ -38,10 +40,3 @@ initialProcess role = do
         say (show pi)
 
   forever ((liftIO $ threadDelay (10^6)) >> ping)
-
-
-
-
-
-
-

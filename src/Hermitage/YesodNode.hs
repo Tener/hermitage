@@ -1,6 +1,7 @@
 {-# LANGUAGE StandaloneDeriving, QuasiQuotes, TypeFamilies, GeneralizedNewtypeDeriving, FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell, OverloadedStrings, GADTs, MultiParamTypeClasses #-}
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, DeriveGeneric, ScopedTypeVariables #-}
+{-# LANGUAGE EmptyDataDecls #-}
 
 module Hermitage.YesodNode where
 
@@ -146,4 +147,7 @@ runYesod = runPGSQL $ \pool -> do
     print =<< runSqlPool (insert $ Submission "haskell" "main = return ()" "fresh" k) pool
     warpDebug 3000 $ Hermitage pool
 
-$( remotable ['runYesod] )
+runYesodProc :: ProcessM ()
+runYesodProc = liftIO runYesod
+
+$( remotable ['runYesod, 'runYesodProc] )
