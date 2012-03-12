@@ -20,7 +20,7 @@ Executable hermitage
                        persistent, persistent-postgresql, persistent-sqlite, persistent-template,
                        remote
   Hs-source-dirs:      src
-  Other-modules:       Hermitage.YesodNode, Hermitage.Roles
+  Other-modules:       Hermitage.YesodNode, Hermitage.Roles, Hermitage.Types, Hermitage.Names
 
   -- fix broken persistent-sqlite package: it really needs pthread...
   Extra-libraries:     pthread
