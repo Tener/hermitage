@@ -101,21 +101,8 @@ getSubmissionQueryR sid = do
   pr <- runDB $ get404 sid
   jsonToRepJson pr
 
-
 openConnectionCount :: Int
 openConnectionCount = 10
-
--- watchdog pool = forever $ do
---   threadDelay (10^4)
---   keys <- runSqlPool (do
---                        subm <- selectFirst [SubmissionStatus ==. "fresh"] []
---                        case subm of
---                          Nothing -> return ()
---                          Just ent -> do
---                                    update (entityKey ent) [SubmissionStatus =. "processing"]
---                        return subm
---                      ) pool
---   when (keys /= Nothing) (print keys)
 
 runPGSQL what = withPostgresqlPool "host=localhost port=5432 dbname=hermitage user=hermitage password=hermitage123" openConnectionCount what
 runSQLITE what = withSqlitePool "test.db3" openConnectionCount what
@@ -124,7 +111,6 @@ runDBBackend what = runPGSQL what
 runYesod :: IO ()
 runYesod = runDBBackend $ \pool -> do
     runSqlPool (runMigration migrateAll) pool
-    -- forkIO (watchdog pool)
     k <- runSqlPool (insert $ Problem "Michał" "") pool
     print k
     print =<< runSqlPool (insert $ Submission "haskell" "main = return ()" "fresh" k) pool

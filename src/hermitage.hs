@@ -58,11 +58,11 @@ unknownRole role = do
   say (printf "This node is not properly configured. The configured role of %s is unknown and thus invalid. It will exit now." role)
   shutdownSelf
 
--- | zatrzymaj własny węzeł
+-- | stop this node
 shutdownSelf :: ProcessM ()
 shutdownSelf = shutdownNode =<< getSelfNode
 
--- | spróbuj zatrzymać docelowy węzeł. musi mieć uruchomiony initial process.
+-- | try stopping provided node
 shutdownNode :: NodeId -> ProcessM ()
 shutdownNode nid = do
   pid <- nameQuery nid "initialProcess"
@@ -72,7 +72,7 @@ shutdownNode nid = do
              status <- sendQuiet pid' Shutdown
              say (printf "shutdownNode:%s" (show status))
 
--- | koordynator nadzoruje uruchamia odpowiedni proces roboczy w zależności od aktualnej roli node'a.
+-- | coordinator runs task based on configured role and restarts when it finishes
 runCoordinator :: ProcessM ()
 runCoordinator = do
   setDaemonic 
@@ -88,8 +88,6 @@ runCoordinator = do
 
     say ("Worker has finished for some reason. Waiting 3 seconds before restarting...")
     liftIO $ threadDelay ((10^6) * 3)
-
--- $( remotable ['runCoordinator] )
 
 runCommander :: ProcessM ()
 runCommander = do
@@ -114,10 +112,10 @@ runCommander = do
          "shutdown" -> cmd'shutdown    
          _ -> cmd'unknown ln
 
--- | proces startowy, nie robi praktycznie nic poza oczekiwaniem na rozkaz zatrzymania systemu.
+-- | initial process. keeps the system running (isn't daemonic proc), awaits 'Shutdown' message
 initialProcess :: String -> ProcessM ()
 initialProcess role = do
-  -- pierwsza rzecz tuż po starcie: zapamiętujemy rolę
+  -- first things first: remember our role
   liftIO $ writeIORef nodeRole role
   nameSet "initialProcess"
   spawnLocal runCoordinator
