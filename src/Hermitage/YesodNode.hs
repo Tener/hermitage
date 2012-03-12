@@ -113,7 +113,7 @@ runYesod = runDBBackend $ \pool -> do
     runSqlPool (runMigration migrateAll) pool
     k <- runSqlPool (insert $ Problem "Michał" "") pool
     print k
-    print =<< runSqlPool (insert $ Submission "haskell" "main = return ()" "fresh" k) pool
+    print =<< runSqlPool (insert $ Submission "haskell" "#!/usr/bin/env runhaskell\n\nmain = print [1..100]" "fresh" k) pool
     warpDebug 3000 $ Hermitage pool
 
 runYesodProc :: ProcessM ()

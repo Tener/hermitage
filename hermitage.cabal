@@ -18,7 +18,7 @@ Executable hermitage
                        yesod, yesod-persistent, yesod-json,
                        bytestring, aeson, text,
                        persistent, persistent-postgresql, persistent-sqlite, persistent-template,
-                       remote, global-variables, binary, containers
+                       remote, global-variables, binary, containers, random, process, filepath, directory
   Hs-source-dirs:      src
   Other-modules:       Hermitage.YesodNode, Hermitage.VerifierNode,
                        Hermitage.Roles, Hermitage.Names,

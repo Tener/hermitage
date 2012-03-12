@@ -1,7 +1,5 @@
-{-# LANGUAGE StandaloneDeriving, QuasiQuotes, TypeFamilies, GeneralizedNewtypeDeriving, FlexibleContexts #-}
-{-# LANGUAGE TemplateHaskell, OverloadedStrings, GADTs, MultiParamTypeClasses #-}
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, DeriveGeneric, ScopedTypeVariables #-}
-{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module Hermitage.VerifierNode where
 
@@ -19,10 +17,30 @@ import Database.Persist.Sqlite
 import Hermitage.YesodNode (runDBBackend)
 import Hermitage.DbTypes
 
+import System.Process
+import System.Random
+import System.FilePath
+import System.Directory
+
+import Control.Exception
+import Data.Data (Data)
+import Data.Typeable (Typeable)
+
+import Data.String
+import Text.Printf
+
+data VerifierException = BadLanguage {msg :: String} deriving (Show, Typeable)
+instance Exception VerifierException
+
 runVerifier :: ProcessM ()
 runVerifier = do
   say "Verifier starting"
   setDaemonic
+
+  tmpdir' <- liftIO $ replicateM 10 (randomRIO ('a','z'))
+  let tmpdir = "var" </> "tmp" </> tmpdir'
+  say $ "Creating tmp directory " ++ show tmpdir
+  liftIO $ createDirectoryIfMissing True tmpdir
 
   finished <- liftIO newEmptyMVar
   poolVar <- liftIO newEmptyMVar
@@ -31,7 +49,20 @@ runVerifier = do
                 putMVar poolVar pool
                 takeMVar finished
 
-  let doWork pool = liftIO $ do
+  loggerVar <- liftIO newEmptyMVar
+
+  let handle'haskell val = do
+         let file = (tmpdir </> "script.hs")
+         writeFile file (submissionText val)
+         output <- try (readProcess "runhaskell" [file] "")
+         return output
+      handle'bash val = do
+         let file = (tmpdir </> "script.sh")
+         writeFile file (submissionText val)
+         output <- try (readProcess "sh" [file] "")
+         return output
+
+  let watchDB pool = liftIO $ do
                 entities <- runSqlPool (do
                                            subm <- selectFirst [SubmissionStatus ==. "fresh"] []
                                            case subm of
@@ -40,13 +71,30 @@ runVerifier = do
                                                        update (entityKey ent) [SubmissionStatus =. "processing"]
                                            return subm
                                          ) pool
-                when (entities /= Nothing) (print entities)
+                case entities of
+                  Nothing -> threadDelay (10^6) -- nothing to do
+                  Just ent -> do
+                               say' ("Executing job: " ++ (show ent))
+                               let val = entityVal ent
+                               res <- case submissionLanguage val of
+                                 "haskell" -> handle'haskell val
+                                 "bash" -> handle'bash val
+                                 lang -> return (Left $ toException (BadLanguage ("Unknown submission language: " ++ show lang)))
+                               say' ("Execution finished. Result: " ++ show res)
+                               runSqlPool (update (entityKey ent) [SubmissionStatus =. (fromString $ printf "finished (%s)" (show res))]) pool
+
+      say' what = putMVar loggerVar what
+      logger = forever $ do
+                 what <- liftIO $ takeMVar loggerVar
+                 say what
+
+  spawnLocal $ setDaemonic >> logger
 
   loopPid <- spawnLocal $ do
     setDaemonic
     forever $ do
       say "Looking for jobs to do..."
-      pbracket (liftIO $ takeMVar poolVar) (\pool -> liftIO (putMVar poolVar pool)) doWork
+      pbracket (liftIO $ takeMVar poolVar) (\pool -> liftIO (putMVar poolVar pool)) watchDB
       liftIO (threadDelay (10^5))
 
 
