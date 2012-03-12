@@ -3,55 +3,64 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Main where
 
+import Prelude hiding (catch)
+
 import Hermitage.YesodNode
+import Hermitage.VerifierNode
 import Hermitage.Roles
-import Hermitage.Types
+import Hermitage.MessageTypes
 
 import Remote
+import Remote.Process
+
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.IO.Class
+import Control.Exception
 
-import Global.Variables
+import Text.Printf
+
+import Data.Global
 import Data.IORef
+import qualified Data.Map
 
-greet :: String -> ProcessM ()
-greet name = say ("Hello, "++name)
-badFib :: Integer -> Integer
-badFib 0 = 1
-badFib 1 = 1
-badFib n = badFib (n-1) + badFib (n-2)
-$( remotable ['greet, 'badFib] )
+import System.Exit
 
 nodeRole :: IORef String
 nodeRole = declareIORef "hermitage::nodeRole" (error "role not yet configured")
 
-main :: IO ()
-main = remoteInit Nothing [Main.__remoteCallMetaData, Hermitage.YesodNode.__remoteCallMetaData] initialProcess
+withMonitorInitial proc = do
+  nid <- getSelfNode
+  selfPid <- getSelfPid
+  pid <- nameQuery nid "initialProcess"
+  case pid of
+    Nothing -> say "Error: no initialProcess. Aborting."
+    Just pid' -> do
+             monitorProcess selfPid pid' MaLink
+             proc
+             unmonitorProcess selfPid pid' MaLink
 
+foreverLogErrors :: ProcessM () -> ProcessM ()
 foreverLogErrors f = do
-   mvar <- newEmptyMVar
-   -- we need to spawn, because we need each invocation to have a different process id. otherwise monitor won't work.
-   spawn (catch (finally f (putMVar mvar ())) (\e -> logS "HER" LoCritical (show (e :: SomeException))))
-   takeMVar mvar
+   res <- ptry f
+   case res of
+     Right _ -> return ()
+     Left e -> logS "HER" LoCritical (show (e :: SomeException)) >> (liftIO $ threadDelay (10^6))
    foreverLogErrors f
 
--- | koordynator nadzoruje uruchamia odpowiedni proces roboczy w zależności od aktualnej roli node'a.
-runCoordinator :: ProcessM ()
-runCoordinator = foreverLogErrors $ do
-                   role <- readIORef nodeRole
-                   -- zwykły node, uruchom sprawdzaczkę
-                   when (role == Hermitage.Roles.role_node) (return ())
-                   -- serwer www.
-                   when (role == Hermitage.Roles.role_yesod) runYesodProc
+-- | run when the node is not properly configured, i.e. has 'role' of a 'NODE'
+unconfiguredNode = do
+  say "This node is not properly configured. The default role of NODE is invalid. It will exit now."
+  shutdownSelf
 
+-- | configured role is unkown
+unknownRole role = do
+  say (printf "This node is not properly configured. The configured role of %s is unknown and thus invalid. It will exit now." role)
+  shutdownSelf
 
--- -- | uruchom master node, tj. node... cholera, po co nam właściwie ten master node?!
--- runMasterNode :: ProcessM ()
--- runMasterNode = foreverLogErrors $ do
---   selfPid <- getSelfPid
---   peers <- getPeers
---   mapM_ (\ node -> nameQueryOrStart node "coordinator" peers runCoordinator__closure ) peers
+-- | zatrzymaj własny węzeł
+shutdownSelf :: ProcessM ()
+shutdownSelf = shutdownNode =<< getSelfNode
 
 -- | spróbuj zatrzymać docelowy węzeł. musi mieć uruchomiony initial process.
 shutdownNode :: NodeId -> ProcessM ()
@@ -59,40 +68,63 @@ shutdownNode nid = do
   pid <- nameQuery nid "initialProcess"
   case pid of
     Nothing -> say "shutdownNode: error: no initialProcess on node"
-    Just pid' -> sendQuiet pid' Shutdown
+    Just pid' -> do
+             status <- sendQuiet pid' Shutdown
+             say (printf "shutdownNode:%s" (show status))
+
+-- | koordynator nadzoruje uruchamia odpowiedni proces roboczy w zależności od aktualnej roli node'a.
+runCoordinator :: ProcessM ()
+runCoordinator = do
+  setDaemonic 
+  foreverLogErrors $ do
+    role <- liftIO (readIORef nodeRole)
+
+    case role of
+      _ | role == Hermitage.Roles.role_verifier -> runVerifier
+        | role == Hermitage.Roles.role_yesod -> runYesodProc
+        | role == Hermitage.Roles.role_commander -> runCommander
+        | role == Hermitage.Roles.role_unconfigured -> unconfiguredNode
+        | otherwise -> unknownRole role
+
+    say ("Worker has finished for some reason. Waiting 3 seconds before restarting...")
+    liftIO $ threadDelay ((10^6) * 3)
+
+-- $( remotable ['runCoordinator] )
+
+runCommander :: ProcessM ()
+runCommander = do
+  setDaemonic
+
+  let cmd'shutdown = do
+        say "Requesting shutdown on all nodes..." 
+        ps <- getPeers
+        forM (Data.Map.toList ps) (\ (role,nodes) -> when (role /= Hermitage.Roles.role_commander) $ do
+                                                  say ("ROLE: " ++ show role ++ " NODES: " ++ show nodes)
+                                                  mapM_ shutdownNode nodes)
+        return ()
+      cmd'unknown ln = do
+        say $ "Unknown command: " ++ show ln
+        say $ "Valid commands: quit shutdown"
+
+  foreverLogErrors $ do
+       say "Waiting for command."
+       ln <- liftIO getLine
+       case ln of
+         "quit" -> shutdownSelf
+         "shutdown" -> cmd'shutdown    
+         _ -> cmd'unknown ln
 
 -- | proces startowy, nie robi praktycznie nic poza oczekiwaniem na rozkaz zatrzymania systemu.
 initialProcess :: String -> ProcessM ()
 initialProcess role = do
   -- pierwsza rzecz tuż po starcie: zapamiętujemy rolę
-  writeIORef nodeRole role
+  liftIO $ writeIORef nodeRole role
   nameSet "initialProcess"
-  selfNode <- getSelfNode
-  nameQueryOrStart selfNode "coordinator" runCoordinator__closure
-  forever (receiveWait [matchUnknown (say "Unknown message received, ignoring..."), 
-                        match (\ Shutdown -> say "Shutting down..." >> terminate)])
-
----  when (role == Hermitage.Roles.role_master) (spawnLocal runMasterNode >> return ())
+  spawnLocal runCoordinator
+  forever (receiveWait [match (\ Shutdown -> say "Shutting down..." >> terminate)
+                       ,matchUnknown (say "Unknown message received, ignoring...")])
 
 
---  
---   selfPid <- getSelfPid
---  
---  
---   selfNode <- getSelfNode
---   when (role == Hermitage.Roles.role_yesod) (spawnLocal runYesodProc >> return ())
--- --  when (role == Hermitage.Roles.role_master) 
--- --  when (role == Hermitage.Roles.role_node)
---  
---   say role
---  
---   pid <- spawn selfNode (greet__closure "John Baptist")
---   say (show pid)
---   return ()
---   
---   let ping = do
---         say "ping!"
---         pi <- getPeers
---         say (show pi)
---  
---   forever ((liftIO $ threadDelay (10^6)) >> ping)
+-- | main function. should be placed at the bottom of file due to TemplateHaskell issues.
+main :: IO ()
+main = remoteInit Nothing [] initialProcess
